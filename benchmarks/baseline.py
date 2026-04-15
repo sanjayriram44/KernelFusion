@@ -70,3 +70,12 @@ def benchmark(func, x, bias, label):
 eager_ms = benchmark(eager_add_gelu, x, bias, "Eager Mode")
 
 compiled_ms = benchmark(compiled_add_gelu, x, bias, "Compiled Mode")
+# In high-performance ML systems, we use warmup iterations to reach a "steady state" by isolating 
+# transient overhead from raw kernel throughput. From a hardware perspective, GPUs utilize 
+# Dynamic Voltage and Frequency Scaling (DVFS), meaning the first few runs occur while the 
+# chip is still ramping up from an idle power state to its peak boost clock. Software-wise, 
+# we must bypass Just-In-Time (JIT) compilation costs, where the system (like TorchInductor 
+# or Triton) generates and optimizes the actual machine code only upon the first execution. 
+# Finally, warmup "primes" cold caches (L1/L2 and Instruction caches) and triggers the lazy 
+# initialization of the CUDA context. This ensures our final benchmarks measure the actual 
+# math logic rather than the one-time "tax" of waking up the hardware and software stack.
