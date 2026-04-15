@@ -1,0 +1,9 @@
+[project]
+name = "kernelfusion"
+version = "0.1.0"
+description = "Kernel fusion experiments"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.4",
+    "torch>=2.11.0",
+]
