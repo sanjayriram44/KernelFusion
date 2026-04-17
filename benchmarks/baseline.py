@@ -1,7 +1,8 @@
 import torch
 import torch.nn.functional as F
 import time
-
+import sys
+import os
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -18,18 +19,16 @@ else:
 
 print(f"🚀 Running on: {device_name}")
 
-
 N = 1024 * 1024 * 16 
 x = torch.randn(N, device=device, dtype=torch.float32)
 bias = torch.randn(N, device=device, dtype=torch.float32)
 
-def eager_add_gelu(x, bias):
-    return F.gelu(x + bias)
+def eager_add_relu(x, bias):
+    return F.relu(x + bias)
 
 @torch.compile
-def compiled_add_gelu(x, bias):
-    return F.gelu(x + bias)
-
+def compiled_add_relu(x, bias):
+    return F.relu(x + bias)
 
 def benchmark(func, x, bias, label):
     print(f"--- Benchmarking {label} ---")
@@ -39,7 +38,6 @@ def benchmark(func, x, bias, label):
         func(x, bias)
     
     if backend == "cuda":
-
         torch.cuda.synchronize()
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
@@ -50,7 +48,6 @@ def benchmark(func, x, bias, label):
         torch.cuda.synchronize()
         avg_ms = start_event.elapsed_time(end_event) / 100
     else:
-
         if backend == "mps":
             torch.mps.synchronize()
         
@@ -66,16 +63,29 @@ def benchmark(func, x, bias, label):
     print(f"Average Time: {avg_ms:.4f} ms\n")
     return avg_ms
 
+eager_ms = benchmark(eager_add_relu, x, bias, "Eager Mode (Add+ReLU)")
+compiled_ms = benchmark(compiled_add_relu, x, bias, "Compiled Mode (Add+ReLU)")
 
-eager_ms = benchmark(eager_add_gelu, x, bias, "Eager Mode")
-
-compiled_ms = benchmark(compiled_add_gelu, x, bias, "Compiled Mode")
-# In high-performance ML systems, we use warmup iterations to reach a "steady state" by isolating 
-# transient overhead from raw kernel throughput. From a hardware perspective, GPUs utilize 
-# Dynamic Voltage and Frequency Scaling (DVFS), meaning the first few runs occur while the 
-# chip is still ramping up from an idle power state to its peak boost clock. Software-wise, 
-# we must bypass Just-In-Time (JIT) compilation costs, where the system (like TorchInductor 
-# or Triton) generates and optimizes the actual machine code only upon the first execution. 
-# Finally, warmup "primes" cold caches (L1/L2 and Instruction caches) and triggers the lazy 
-# initialization of the CUDA context. This ensures our final benchmarks measure the actual 
-# math logic rather than the one-time "tax" of waking up the hardware and software stack.
+if backend == "cuda":
+    # Try importing custom kernels
+    try:
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+        from pysrc.add_relu_triton import triton_add_relu
+        
+        # Verify correctness before benchmarking
+        eager_out = eager_add_relu(x, bias)
+        triton_out = triton_add_relu(x, bias)
+        assert torch.allclose(eager_out, triton_out, atol=1e-5), "Triton kernel output mismatch!"
+        
+        triton_ms = benchmark(triton_add_relu, x, bias, "Triton Add+ReLU Kernel")
+    except ImportError:
+        print("Triton kernel not found or failed to load.")
+        
+    try:
+        import fused_ops_backend
+        cuda_out = fused_ops_backend.fused_add_relu(x, bias)
+        assert torch.allclose(eager_out, cuda_out, atol=1e-5), "CUDA kernel output mismatch!"
+        
+        cuda_ms = benchmark(fused_ops_backend.fused_add_relu, x, bias, "Custom CUDA Add+ReLU Kernel")
+    except ImportError:
+        print("fused_ops_backend not installed, skipping Custom CUDA kernel benchmark. Run `python setup.py install`")

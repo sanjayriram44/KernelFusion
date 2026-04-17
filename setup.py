@@ -12,7 +12,7 @@ setup(
             name='fused_ops_backend',
             sources=[
                 'csrc/ops.cpp',
-                'csrc/kernels/add_gelu.cu',
+                'csrc/kernels/add_relu.cu',
             ],
             include_dirs=[os.path.join(csrc_dir, 'include')],
             extra_compile_args={

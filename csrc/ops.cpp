@@ -3,8 +3,8 @@
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def(
-        "fused_add_gelu",        
-        &fused_add_gelu,           
-        "Fused Add and GELU activation (CUDA)" 
+        "fused_add_relu",        
+        &fused_add_relu,           
+        "Fused Add and ReLU activation (CUDA)" 
     );
 }
